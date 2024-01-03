@@ -25,6 +25,9 @@ I've created this node for experimentation, feel free to submit PRs for performa
 * [Download LDSR](https://heibox.uni-heidelberg.de/f/578df07c8fc04ffbadf3/?dl=1) and place it in ```ComfyUI/models/upscale_models```
 * Start ComfyUI (or restart)
 
+### Workflow:
+![example](workflow.png)
+
 This is a community project from [flowt.ai](https://flowt.ai). If you like it, check us out!
 
 <picture>
