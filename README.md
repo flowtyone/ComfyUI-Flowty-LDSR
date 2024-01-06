@@ -28,6 +28,8 @@ I've created this node for experimentation, feel free to submit PRs for performa
 ### Workflow:
 ![example](workflow.png)
 
+![example2](workflow2.png)
+
 This is a community project from [flowt.ai](https://flowt.ai). If you like it, check us out!
 
 <picture>

@@ -1,3 +1,6 @@
+import PIL.Image
+
+import nodes
 from .ldm.util import instantiate_from_config
 from .ldm.models.diffusion.ddim import DDIMSampler
 from .ldm.util import ismap
@@ -10,28 +13,83 @@ from omegaconf import OmegaConf
 import numpy as np
 from os import path
 import warnings
+from comfy import model_management
+import comfy
+from PIL import ImageOps
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
+
 class LDSR():
-    def __init__(self, modelPath, torchdevice=torch.device("cuda"), on_progress=None, yamlPath=path.join(path.dirname(__file__), "config.yaml")):
+    def __init__(self, modelPath=None, model=None, torchdevice=model_management.get_torch_device(), on_progress=None, yamlPath=path.join(path.dirname(__file__), "config.yaml")):
         self.modelPath = modelPath
+        self.model = model
         self.yamlPath = yamlPath
-        self.torchdevice=torchdevice
+        self.torchdevice = torchdevice
         self.progress_hook = on_progress if on_progress else None
 
+    @staticmethod
+    def normalize_image(image):
+        w, h = image.size
 
-    def load_model_from_config(self):
-        print(f"Loading model from {self.modelPath}")
-        pl_sd = torch.load(self.modelPath, map_location="cpu")
-        global_step = pl_sd["global_step"]
+        # ensure (min length > 128)
+        if h < w and h < 128:
+            scale_ratio = 128 / h
+            h = 128
+            w = int(scale_ratio * w)
+        elif w < 128:
+            scale_ratio = 128 / w
+            w = 128
+            h = int(scale_ratio * h)
+
+        resample = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+        image = image.resize((w, h), resample=resample)
+
+        # ensure (multiply of 64)
+        w_pad = 64 - w % 64
+        h_pad = 64 - h % 64
+
+        padded_image = Image.new("RGB", (w + w_pad, h + h_pad), color="black")
+        padded_image.paste(image, (0, 0))
+
+        return padded_image, w_pad, h_pad
+
+    @staticmethod
+    def remove_padding(prev_pil, image, w_pad, h_pad):
+        if w_pad == 0 and h_pad == 0:
+            return image
+
+        w1, h1 = prev_pil.size
+        h2, w2, _ = image.size()
+
+        scale_ratio = h2 / h1
+        w_pad = float.__ceil__(w_pad * scale_ratio)
+        h_pad = float.__ceil__(h_pad * scale_ratio)
+
+        return image[:h2-h_pad, :w2-w_pad, :]
+
+
+    @staticmethod
+    def load_model_from_path(modelPath, device=model_management.get_torch_device(), yamlPath=path.join(path.dirname(__file__), "config.yaml")):
+        print(f"Loading model from {modelPath}")
+        pl_sd = torch.load(modelPath, map_location="cpu")
         sd = pl_sd["state_dict"]
-        config = OmegaConf.load(self.yamlPath)
+        config = OmegaConf.load(yamlPath)
         model = instantiate_from_config(config.model)
         model.load_state_dict(sd, strict=False)
-        model.to(self.torchdevice)
+
+        model.to(device)
         model.eval()
-        return {"model": model}  # , global_step
+
+        return {"model": model}
+
+    def load_model_from_config(self):
+        if self.model is None:
+            self.model = LDSR.load_model_from_path(self.modelPath, self.torchdevice)
+        else:
+            self.model['model'].to(self.torchdevice)
+
+        return self.model
 
     def progress_callback(self, i):
         if self.progress_hook:
@@ -237,6 +295,8 @@ class LDSR():
             print(f'Downsampling from [{width_og}, {height_og}] to [{width_downsampled_pre}, {height_downsampled_pre}]')
             im_og = im_og.resize((width_downsampled_pre, height_downsampled_pre), Image.LANCZOS)
 
+        im_og, w_pad, h_pad = LDSR.normalize_image(im_og)
+
         logs = self.run(model["model"], im_og, diffMode, diffusion_steps, eta)
 
         sample = logs["sample"]
@@ -269,8 +329,15 @@ class LDSR():
             a = a.resize((width_downsampled_post, height_downsampled_post), aliasing)
         elif post_downsample == 'Original Size':
             print(f'Downsampling from [{width}, {height}] to Original Size [{width_og}, {height_og}]')
-            a = a.resize((width_og, height_og), aliasing)
+            a = a.resize((width_og+w_pad, height_og+h_pad), aliasing)
 
         out = np.array(a).astype(np.float32) / 255.0
 
-        return torch.from_numpy(out)[None,][0]
+        # Finalize
+        result_image = torch.from_numpy(out)
+        result_image = LDSR.remove_padding(im_og, result_image, w_pad, h_pad)
+
+        model['model'].cpu()
+        result_image.cpu()
+
+        return result_image
