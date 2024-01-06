@@ -1,3 +1,5 @@
+import PIL.Image
+
 import nodes
 from .ldm.util import instantiate_from_config
 from .ldm.models.diffusion.ddim import DDIMSampler
@@ -12,6 +14,8 @@ import numpy as np
 from os import path
 import warnings
 from comfy import model_management
+import comfy
+from PIL import ImageOps
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -26,7 +30,7 @@ class LDSR():
 
     @staticmethod
     def normalize_image(image):
-        h, w, c = image.size()
+        w, h = image.size
 
         # ensure (min length > 128)
         if h < w and h < 128:
@@ -38,24 +42,24 @@ class LDSR():
             w = 128
             h = int(scale_ratio * h)
 
-        image = nodes.ImageScale().upscale(image.unsqueeze(0), "lanczos", w, h, "disabled")[0].squeeze(0)
+        resample = (Image.Resampling.LANCZOS if hasattr(Image, 'Resampling') else Image.LANCZOS)
+        image = image.resize((w, h), resample=resample)
 
         # ensure (multiply of 64)
         w_pad = 64 - w % 64
         h_pad = 64 - h % 64
 
-        new_image = torch.zeros((h + h_pad, w + w_pad, c), dtype=torch.float32,)
-        new_image[:h, :w, :] = image
+        padded_image = Image.new("RGB", (w + w_pad, h + h_pad), color="black")
+        padded_image.paste(image, (0, 0))
 
-        return new_image, w_pad, h_pad
-
+        return padded_image, w_pad, h_pad
 
     @staticmethod
-    def remove_padding(prev_image, image, w_pad, h_pad):
+    def remove_padding(prev_pil, image, w_pad, h_pad):
         if w_pad == 0 and h_pad == 0:
             return image
 
-        h1, w1, _ = prev_image.size()
+        w1, h1 = prev_pil.size
         h2, w2, _ = image.size()
 
         scale_ratio = h2 / h1
@@ -273,8 +277,6 @@ class LDSR():
         # Nearest gives sharper results, but may look more pixellated. Lancoz is much higher quality, but result may be less crisp.
         downsample_method = downsampleMethod  # @param ['Nearest', 'Lanczos']
 
-        image, w_pad, h_pad = LDSR.normalize_image(image)
-
         i = 255. * image.cpu().numpy()
         im_og = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
         width_og, height_og = im_og.size
@@ -292,6 +294,8 @@ class LDSR():
         if downsample_rate != 1:
             print(f'Downsampling from [{width_og}, {height_og}] to [{width_downsampled_pre}, {height_downsampled_pre}]')
             im_og = im_og.resize((width_downsampled_pre, height_downsampled_pre), Image.LANCZOS)
+
+        im_og, w_pad, h_pad = LDSR.normalize_image(im_og)
 
         logs = self.run(model["model"], im_og, diffMode, diffusion_steps, eta)
 
@@ -325,13 +329,13 @@ class LDSR():
             a = a.resize((width_downsampled_post, height_downsampled_post), aliasing)
         elif post_downsample == 'Original Size':
             print(f'Downsampling from [{width}, {height}] to Original Size [{width_og}, {height_og}]')
-            a = a.resize((width_og, height_og), aliasing)
+            a = a.resize((width_og+w_pad, height_og+h_pad), aliasing)
 
         out = np.array(a).astype(np.float32) / 255.0
 
         # Finalize
         result_image = torch.from_numpy(out)
-        result_image = LDSR.remove_padding(image, result_image, w_pad, h_pad)
+        result_image = LDSR.remove_padding(im_og, result_image, w_pad, h_pad)
 
         model['model'].cpu()
         result_image.cpu()
