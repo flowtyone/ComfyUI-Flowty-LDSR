@@ -5,6 +5,7 @@ from .ldsrlib.LDSR import LDSR
 from folder_paths import get_filename_list, get_full_path
 from comfy.model_management import get_torch_device
 from comfy.utils import ProgressBar
+import torch
 
 
 class LDSRModelLoader:
@@ -73,7 +74,7 @@ class LDSRUpscale:
         for image in images:
             outputs.append(ldsr.superResolution(image, int(steps), pre_downscale, post_downscale, downsample_method))
 
-        return (outputs,)
+        return (torch.stack(outputs),)
 
 
 class LDSRUpscaler:
@@ -122,7 +123,7 @@ class LDSRUpscaler:
         for image in images:
             outputs.append(ldsr.superResolution(image, int(steps), pre_downscale, post_downscale, downsample_method))
 
-        return (outputs, )
+        return (torch.stack(outputs),)
 
 
 NODE_CLASS_MAPPINGS = {
