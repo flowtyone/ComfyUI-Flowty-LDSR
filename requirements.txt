@@ -3,5 +3,5 @@ torch
 einops
 omegaconf
 tqdm
-pytorch-lightning==1.7.7
+pytorch-lightning
 torchmetrics==0.11.4
