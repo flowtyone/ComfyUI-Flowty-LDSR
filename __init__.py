@@ -43,7 +43,7 @@ class LDSRUpscale:
             "required": {
                 "upscale_model": ("UPSCALE_MODEL",),
                 "images": ("IMAGE",),
-                "steps": (["25", "50", "100", "250", "500", "1000"], {"default": "100"}),
+                "steps": (["6", "12", "25", "50", "100", "250", "500", "1000"], {"default": "100"}),
                 "pre_downscale": (['None', '1/2', '1/4'], {"default": "None"}),
                 "post_downscale": (['None', 'Original Size', '1/2', '1/4'], {"default": "None"}),
                 "downsample_method": (['Nearest', 'Lanczos'], {"default": "Lanczos"}),
@@ -91,7 +91,7 @@ class LDSRUpscaler:
             "required": {
                 "model": (model_list, {'default': default_path}),
                 "images": ("IMAGE",),
-                "steps": (["25", "50", "100", "250", "500", "1000"], {"default": "100"}),
+                "steps": (["6", "12", "25", "50", "100", "250", "500", "1000"], {"default": "100"}),
                 "pre_downscale": (['None', '1/2', '1/4'], {"default": "None"}),
                 "post_downscale": (['None', 'Original Size', '1/2', '1/4'], {"default": "None"}),
                 "downsample_method": (['Nearest', 'Lanczos'], {"default": "Lanczos"}),
